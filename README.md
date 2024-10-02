@@ -1,179 +1,171 @@
-mkdir emotional-chatbot
-cd emotional-chatbot
-npm init -y
-npm install express socket.io mongoose dotenv twilio axios
-emotional-chatbot/
-├── .env
-├── Dockerfile
-├── server.js
-├── models/
-│   └── Message.js
-├── routes/
-│   └── chat.js
-└── config/
-    └── db.js
+{
+  "name": "zenoasis-backend",
+  "version": "1.0.0",
+  "description": "Backend for ZenOasis Chatbot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "mongoose": "^5.11.15",
+    "socket.io": "^4.0.0",
+    "dotenv": "^8.2.0",
+    "twilio": "^3.58.0"
+  }
+}
+MONGODB_URI=your_mongodb_uri
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=your_twilio_phone_number
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-  user: { type: String, required: true },
-  message: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now }
+  userId: String,
+  message: String,
+  timestamp: { type: Date, default: Date.now },
 });
 
 module.exports = mongoose.model('Message', messageSchema);
-const mongoose = require('mongoose');
-require('dotenv').config();
-
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
-    console.log('MongoDB Connected');
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-};
-
-module.exports = connectDB;
 const express = require('express');
-const http = require('http');
-const socketio = require('socket.io');
 const mongoose = require('mongoose');
+const http = require('http');
+const socketIo = require('socket.io');
+const dotenv = require('dotenv');
 const Message = require('./models/Message');
-const connectDB = require('./config/db');
-const axios = require('axios');
 const twilio = require('twilio');
-require('dotenv').config();
 
+dotenv.config();
 const app = express();
 const server = http.createServer(app);
-const io = socketio(server);
+const io = socketIo(server);
 
-// Twilio API Setup
-const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 
-// Connect to MongoDB
-connectDB();
-
-app.use(express.json());
-
-// Socket.io Chat Functionality
 io.on('connection', (socket) => {
-  console.log('User connected');
+  console.log('New client connected');
 
-  socket.on('sendMessage', async (messageData) => {
-    const { user, message } = messageData;
-
-    // Save message to MongoDB
-    const newMessage = new Message({ user, message });
+  socket.on('sendMessage', async (data) => {
+    const newMessage = new Message(data);
     await newMessage.save();
-
-    // Analyze emotional tone using Gemini API (replace with actual endpoint)
-    const emotionalResponse = await axios.post('https://gemini-api.com/analyze', {
-      text: message
-    }, {
-      headers: { Authorization: `Bearer ${process.env.GEMINI_API_KEY}` }
-    });
-
-    const emotionalTone = emotionalResponse.data.emotion;
-    io.emit('receiveMessage', { user, message, emotionalTone });
-
-    // Send SMS via Twilio if distressed
-    if (emotionalTone === 'distressed') {
-      await twilioClient.messages.create({
-        body: `User ${user} seems distressed. Message: ${message}`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: process.env.NOTIFICATION_PHONE_NUMBER
-      });
-    }
+    io.emit('newMessage', newMessage);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    console.log('Client disconnected');
   });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-MONGO_URI=mongodb+srv://<your-mongodb-connection-string>
-GEMINI_API_KEY=your_gemini_api_key
-TWILIO_SID=your_twilio_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=your_twilio_phone_number
-NOTIFICATION_PHONE_NUMBER=your_target_phone_number
-npx create-react-app emotional-chatbot-frontend
-cd emotional-chatbot-frontend
-npm install socket.io-client axios
-import React, { useState, useEffect } from 'react';
+server.listen(5000, () => {
+  console.log('Server is running on port 5000');
+});
+{
+  "name": "zenoasis-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for ZenOasis Chatbot",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test"
+  },
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "socket.io-client": "^4.0.0"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
+import Chat from './components/Chat';
 
 const socket = io('http://localhost:5000');
 
-const Chat = () => {
-  const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState([]);
-
-  useEffect(() => {
-    socket.on('receiveMessage', (data) => {
-      setMessages((prevMessages) => [...prevMessages, data]);
-    });
-  }, []);
-
-  const sendMessage = () => {
-    const user = 'Student'; // Replace with dynamic user data
-    socket.emit('sendMessage', { user, message });
-    setMessage('');
-  };
-
-  return (
-    <div>
-      <h2>Emotional Support Chat</h2>
-      <div className="chat-box">
-        {messages.map((msg, index) => (
-          <div key={index}>
-            <strong>{msg.user}:</strong> {msg.message} <em>({msg.emotionalTone})</em>
-          </div>
-        ))}
-      </div>
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Type your message..."
-      />
-      <button onClick={sendMessage}>Send</button>
-    </div>
-  );
-};
-
-export default Chat;
-import React from 'react';
-import './App.css';
-import Chat from './Chat';
-
 function App() {
   return (
-    <div className="App">
-      <Chat />
+    <div>
+      <h1>ZenOasis Chatbot</h1>
+      <Chat socket={socket} />
     </div>
   );
 }
 
 export default App;
+import React, { useEffect, useState } from 'react';
+
+function Chat({ socket }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+
+  useEffect(() => {
+    socket.on('newMessage', (message) => {
+      setMessages((prevMessages) => [...prevMessages, message]);
+    });
+  }, [socket]);
+
+  const sendMessage = () => {
+    socket.emit('sendMessage', { message: input });
+    setInput('');
+  };
+
+  return (
+    <div>
+      <div>
+        {messages.map((msg, index) => (
+          <div key={index}>{msg.message}</div>
+        ))}
+      </div>
+      <input 
+        type="text" 
+        value={input} 
+        onChange={(e) => setInput(e.target.value)} 
+        onKeyPress={(e) => e.key === 'Enter' ? sendMessage() : null} 
+      />
+      <button onClick={sendMessage}>Send</button>
+    </div>
+  );
+}
+
+export default Chat;
 FROM node:14
-
-WORKDIR /app
-
-COPY package.json /app/package.json
+WORKDIR /usr/src/app
+COPY package*.json ./
 RUN npm install
-
-COPY . /app
-
+COPY . .
 EXPOSE 5000
-
+CMD ["node", "server.js"]
+FROM node:14
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 CMD ["npm", "start"]
-docker build -t emotional-chatbot .
-docker run -p 5000:5000 emotional-chatbot
+version: '3'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
