@@ -1,0 +1,67 @@
+
+from transformers import pipeline
+from flask import Flask, request, jsonify
+import requests
+import os
+from .env import load.env
+
+# Load environment variables from .env file
+load.env()
+
+# Initialize the Flask application
+app = Flask(__name__)
+
+# Load the transformer model for text generation
+chatbot = pipeline("text-generation", model="gpt2")
+
+# Load the sentiment analysis model
+sentiment_analyzer = pipeline("sentiment-analysis")
+
+# Define your Gemini API details
+GEMINI_API_URL = "https://api.gemini.com/v1/some-endpoint"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+def call_gemini_api(user_input):
+    headers = {
+        'Authorization': f'Bearer {GEMINI_API_KEY}',
+        'Content-Type': 'application/json'
+    }
+    data = {
+        "query": user_input
+    }
+    try:
+        response = requests.post(GEMINI_API_URL, headers=headers, json=data)
+        response.raise_for_status()  # Raise an error for bad responses
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.json.get('message')
+    
+    # Analyze the sentiment of the user input
+    sentiment = sentiment_analyzer(user_input)[0]
+    sentiment_label = sentiment['label']
+    sentiment_score = sentiment['score']
+
+    # Call Gemini API for additional insights
+    gemini_response = call_gemini_api(user_input)
+
+    # Generate a response from the transformer model
+    if sentiment_label == 'POSITIVE':
+        response = chatbot(f"I'm glad to hear that! {user_input}", max_length=50, num_return_sequences=1)[0]['generated_text']
+    elif sentiment_label == 'NEGATIVE':
+        response = chatbot(f"I'm sorry to hear that. {user_input}", max_length=50, num_return_sequences=1)[0]['generated_text']
+    else:
+        response = chatbot(user_input, max_length=50, num_return_sequences=1)[0]['generated_text']
+    
+    return jsonify({
+        'response': response,
+        'sentiment': sentiment_label,
+        'score': sentiment_score,
+        'gemini_data': gemini_response 
+    })
+
+if __name__ == '__main__':
+    app.run(port=8081, debug=True)  # For development/testing
